@@ -1,0 +1,566 @@
+---
+title: "626_midterm"
+output: pdf_document
+date: "2023-04-02"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(dplyr)
+library(glmnet)
+library(caret)
+library(randomForest)
+library(e1071)   
+library(GA)
+library(mclust)
+```
+
+# Binary
+
+```{r}
+train<- read.table(file = "training_data.txt", header = TRUE)
+test<- read.table(file = "test_data.txt", header = TRUE)
+head(train)
+```
+
+```{r}
+train$y[train$activity < 4] <- 1
+train$y[train$activity > 3] <- 0
+train=train %>% relocate(y)
+```
+
+```{r}
+sapply(train,function(x) sum(is.na(x)))
+```
+
+```{r}
+train$y <- as.numeric(train$y)
+set.seed(1)
+sample <- sample(c(TRUE, FALSE), nrow(train), replace=TRUE, prob=c(0.7,0.3))
+train1  <- train[sample, ]
+test1  <- train[!sample, ]
+```
+
+# logistic
+
+```{r}
+X <-  model.matrix(y ~  .-subject-activity, data=train1)
+Y <- train1$y
+```
+
+
+```{r}
+#m1 <- glm(y ~.-subject-activity,family=binomial(),data=train1)
+cv.model<- cv.glmnet(x=X[,-1],y=Y, 
+                       family = "binomial", 
+                       alpha=1)    
+plot(cv.model)
+```
+
+```{r}
+l.min <- cv.model$lambda.min
+l.min
+```
+
+```{r}
+lasso.model <- glmnet(x=X,y=Y, 
+                      family = "binomial", 
+                      alpha=1, 
+                      lambda = l.min)
+```
+
+```{r}
+assess.glmnet(lasso.model,           
+              newx = X,              
+              newy = Y )  
+#coef(cv.model, l.min)
+```
+
+```{r}
+# Make prediction on test data
+X_test <-  model.matrix(y ~  .-activity, data=test1)[,-1]
+probabilities <- lasso.model %>% predict(newx = X_test)
+predicted.classes <- ifelse(probabilities > 0.5, 1, 0)
+# Model accuracy
+observed.classes <- test1$y
+logit_bi=mean(predicted.classes == observed.classes)
+```
+
+```{r}
+logit_bi=mean(predicted.classes == observed.classes)
+```
+
+
+```{r}
+X_test1 <-  model.matrix(~., data=test)[,-1]
+probabilities1 <- lasso.model %>% predict(newx = X_test1)
+predicted.classes1 <- ifelse(probabilities1 > 0.5, 1, 0)
+```
+
+```{r}
+dfn <- data.frame(predicted.classes1)
+#dfn$predicted.classes1 = as.numeric(levels(dfn$predicted.classes1))[dfn$predicted.classes1]
+write.table(dfn, file="binary_19920506.txt", sep="\t", col.names = F, row.names = F)
+```
+
+# random forest
+
+```{r}
+train$y <- as.factor(train$y)
+set.seed(1)
+train = subset(train, select = -c(activity,subject) )
+sample <- sample(c(TRUE, FALSE), nrow(train), replace=TRUE, prob=c(0.7,0.3))
+train1 <- train[sample, ]
+test1  <- train[!sample, ]
+```
+
+```{r}
+rf <- randomForest(y~., data=train1, proximity=TRUE) 
+```
+
+```{r}
+p1 <- predict(rf, test1)
+confusionMatrix(p1, test1$y)
+```
+
+```{r}
+rf_bi=mean(p1==test1$y)
+# p2 <- predict(rf, test)
+# 
+# df1 <- data.frame(p2)
+# df1$p2 = as.numeric(levels(df1$p2))[df1$p2]
+# write.table(df1, file="binary_19920506.txt", sep="\t", col.names = F, row.names = F)
+```
+
+```{r}
+library(data.table)
+table1 <- data.table(Algorithms = c('logistic regression','random forest'),Accuracy = c(logit_bi,rf_bi))
+table1
+```
+
+
+# Multi
+
+```{r}
+train_m<- read.table(file = "training_data.txt", header = TRUE)
+test_m<- read.table(file = "test_data.txt", header = TRUE)
+train_m$y1=train_m$activity
+train_m$y1[train_m$activity > 6] <- 7
+train_m=train_m %>% relocate(y1)
+train_m = subset(train_m,select=-c(activity,subject))
+```
+
+```{r}
+set.seed(1)
+correlationMatrix <- cor(train_m[,2:562])
+highlyCorrelated <- findCorrelation(correlationMatrix, cutoff=0.75)
+# print indexes of highly correlated attributes
+df_hc <- train_m[,c(-highlyCorrelated)]
+df_hc
+```
+
+```{r}
+df_hc$y1 <- as.factor(df_hc$y1)
+set.seed(123)
+test_new <- test_m[,c(-highlyCorrelated)]
+test_new = subset(test_new, select = -c(subject) )
+test_m=subset(test_m,select=-c(subject))
+sample_m <- sample(c(TRUE, FALSE), nrow(df_hc), replace=TRUE, prob=c(0.7,0.3))
+train1_m <- df_hc[sample_m, ]
+test1_m  <- df_hc[!sample_m, ]
+```
+
+```{r}
+train_m$y1 <- as.factor(train_m$y1)
+set.seed(123)
+sample_m <- sample(c(TRUE, FALSE), nrow(train_m), replace=TRUE, prob=c(0.7,0.3))
+train2_m <- train_m[sample_m, ]
+test2_m  <- train_m[!sample_m, ]
+```
+
+
+# Logistic_Approach1
+
+```{r}
+# Fit the model
+model_logit <- nnet::multinom(y1 ~., data = train1_m,MaxNWts =10000000)
+# Make predictions
+predicted.classes.l <- model_logit %>% predict(test1_m)
+# Model accuracy
+mean(predicted.classes.l == test1_m$y1)
+```
+
+```{r}
+# Fit the model
+model_logit_f <- nnet::multinom(y1 ~., data = train2_m,MaxNWts =10000000)
+predicted.classes.l_f <- model_logit_f %>% predict(test2_m)
+# Model accuracy
+mean(predicted.classes.l_f == test2_m$y1)
+```
+
+```{r}
+predict_y_log <- model_logit %>% predict(test_m)
+```
+
+# Logistic_Approach2
+
+```{r}
+X1 <-  model.matrix(y1 ~., data=train1_m)
+Y1 <- train1_m$y1
+
+#m1 <- glm(y ~.-subject-activity,family=binomial(),data=train1)
+cv.model1<- cv.glmnet(x=X1[,-1],y=Y1, 
+                       family = "multinomial", 
+                       alpha=1)    
+plot(cv.model1)
+```
+
+
+```{r}
+# Make prediction on test data
+X_test_multi <-  model.matrix(y1 ~., data=test1_m)[,-1]
+logit_pred = predict(cv.model1, X_test_multi, type="class")
+mean(logit_pred==test1_m$y1)
+```
+
+```{r}
+X2 <-  model.matrix(y1 ~., data=train2_m)
+Y2 <- train2_m$y1
+
+cv.model2<- cv.glmnet(x=X2[,-1],y=Y2, 
+                       family = "multinomial", 
+                       alpha=1)    
+```
+
+```{r}
+X_test_multi1 <-  model.matrix(y1 ~., data=test2_m)[,-1]
+logit_pred1 = predict(cv.model2, X_test_multi1, type="class")
+mean(logit_pred1==test2_m$y1)
+```
+
+
+```{r}
+X_test_final <-  model.matrix(~., data=test_m)[,-1]
+logit_pred_final = predict(cv.model2, X_test_final, type="class")
+#mean(logit_pred1==test2_m$y1)
+```
+
+
+# Decision Tree
+
+```{r}
+train_control = trainControl(method = "cv", number = 7, search = "grid")
+
+multi_classification_Tree_Grid =expand.grid(maxdepth = c(1,3,5,7,9,11,13,15,17,19))
+
+set.seed(50)
+
+# training a Regression model while tuning parameters (Method = "rpart")
+model_dt1 = train(y1~., data = train1_m, method = "rpart2", trControl = train_control, tuneGrid = multi_classification_Tree_Grid)
+model_dt2 = train(y1~., data = train2_m, method = "rpart2", trControl = train_control, tuneGrid = multi_classification_Tree_Grid)
+# summarising the results
+model_dt1
+model_dt2
+```
+# Decision_Tree_Approach2
+
+```{r}
+require(tree)
+t1 = tree(y1~.,data=train1_m)
+tree_pred = predict(t1, test1_m, type="class")
+mean(tree_pred==test1_m$y1)
+
+t2 = tree(y1~.,data=train2_m)
+tree_pred1 = predict(t2, test2_m, type="class")
+dt=mean(tree_pred1==test2_m$y1)
+```
+
+# Decision_Tree_Approach3
+
+```{r}
+library(rpart)
+t3<-rpart(y1~.,data=train1_m,method='class')
+tree_pred2<-predict(t3, test1_m, type = 'class')
+mean(tree_pred2==test1_m$y1)
+```
+
+```{r}
+t4<-rpart(y1~.,data=train2_m,method='class')
+tree_pred3<-predict(t4, test2_m, type = 'class')
+mean(tree_pred3==test2_m$y1)
+```
+
+# Random Forest
+
+```{r}
+rf_m <- randomForest(y1~., data=train1_m, proximity=TRUE) 
+rf_m
+```
+```{r}
+p1_m <- predict(rf_m, test1_m)
+confusionMatrix(p1_m, test1_m$y1)
+```
+
+
+```{r}
+df2 <- data.frame(p2_m)
+df2$p2_m = as.numeric(levels(df2$p2_m))[df2$p2_m]
+write.table(df2, file="multiclass_19920506.txt", sep="\t", col.names = F, row.names = F)
+```
+
+```{r}
+rf_m1 <- randomForest(y1~., data=train2_m, proximity=TRUE) 
+rf_m1
+```
+
+```{r}
+p1_m1 <- predict(rf_m1, test2_m)
+confusionMatrix(p1_m1, test2_m$y1)
+```
+
+```{r}
+rf_final<- predict(rf_m1, test_m)
+```
+
+
+# SVM 
+
+```{r}
+#model after feature selection
+svm_model <- svm(y1~.,data=train1_m,kernel='linear',cost=1)
+pred_svm <- predict(svm_model,test1_m)
+mean(pred_svm == test1_m$y1)
+```
+
+```{r}
+#full model
+svm_model1 <- svm(y1~.,data=train2_m,kernel='linear',cost=1)
+pred_svm1 <- predict(svm_model1,test2_m)
+mean(pred_svm1 == test2_m$y1)
+```
+
+```{r}
+svm_final <- predict(svm_model1,test_m)
+```
+
+
+```{r}
+# ## 5-fold cross validation
+# K = 5 
+# fold_inds <- sample( 1 : K, nrow(train_m), replace = TRUE )
+# 
+# ## split data into training & testing partitions
+# cv_data <- lapply( 
+#     1 : K, 
+#     function(index) 
+#     list( 
+#         train_data = train_m[fold_inds != index, , drop = FALSE ], 
+#         test_data = train_m[fold_inds == index, , drop = FALSE ] 
+#     )
+# )
+
+# fitness_func <- function( x, cv_data ) 
+# {
+# 
+#     ## fetch SVM parameters
+#     gamma_val <- x[ 1 ]
+#     c_val <- x[ 2 ]
+# 
+#     ## use cross validation to estimate RMSD for each partition of data set
+#     rmsd_vals <- sapply(
+#         cv_data, 
+#         function( input_data ) with( 
+#             input_data, 
+#             rmsd( train_data, test_data, c_val, gamma_val ) 
+#         )
+#     )
+# 
+#     ## return negative RMSD 
+#     return ( -mean( rmsd_vals ) )
+# }
+
+## set value range for the parameters: Gamma & C 
+# para_value_min <- c( gamma = 1e-3, c = 1e-4 )
+# para_value_max <- c( gamma = 2, c = 10 )
+# 
+# ## run genetic algorithm
+# results <- ga( type = "real-valued", 
+#                fitness = fitness_func, 
+#                cv_data, 
+#                names = names( para_value_min ), 
+#                lower = para_value_min, 
+#                upper = para_value_max,
+#                popSize = 50, 
+#                maxiter = 100
+# )
+```
+
+# Neural_Network
+
+```{r}
+library(neuralnet)
+library(tidyverse)
+```
+
+```{r}
+nn_model = neuralnet(y1~.,data=train1_m,hidden=c(8,3),linear.output = FALSE)
+```
+
+```{r}
+nn_pred <- compute(nn_model, test1_m)
+predict_nn <- apply(nn_pred$net.result, 1, which.max)
+mean(predict_nn == test1_m$y1)
+```
+
+```{r}
+nn_model1 = neuralnet(y1~.,data=train2_m,hidden=c(8,3),linear.output = FALSE)
+```
+
+```{r}
+nn_pred1 <- compute(nn_model1, test2_m)
+predict_nn1 <- apply(nn_pred1$net.result, 1, which.max)
+mean(predict_nn1 == test2_m$y1)
+```
+
+```{r}
+nn_pred_f <- compute(nn_model1, test_m)
+nn_final <- apply(nn_pred_f$net.result, 1, which.max)
+```
+
+
+# KNN
+
+```{r}
+library(class)
+```
+
+
+```{r}
+classifier_knn <- knn(train = train1_m[,-1],
+                      test = test1_m[,-1],
+                      cl = train1_m$y1,
+                      k = 5)
+
+mean(test1_m$y1==classifier_knn)
+```
+
+```{r}
+knn_final <- knn(train = train2_m[,-1],
+                      test = test_m,
+                      cl = train2_m$y1,
+                      k = 9)
+knn_final1 <- knn(train = train1_m[,-1],
+                      test = test_new,
+                      cl = train1_m$y1,
+                      k = 5)
+```
+
+
+```{r}
+classifier_knn1 <- knn(train = train2_m[,-1],
+                      test = test2_m[,-1],
+                      cl = train2_m$y1,
+                      k = 9)
+# i tried out different k values
+mean(test2_m$y1==classifier_knn1)
+```
+
+
+```{r}
+logit_pred1=as.factor(logit_pred1)
+predict_nn1=as.factor(predict_nn1)
+# compare select vs full rf
+df_comp1 = data.frame(logit_pred1,p1_m,pred_svm1,predict_nn1,classifier_knn)
+df_comp2 = data.frame(logit_pred1,p1_m1,pred_svm1,predict_nn1,classifier_knn)
+df_comp3 = data.frame(logit_pred1,p1_m,p1_m1,pred_svm1,predict_nn1,classifier_knn)
+df_comp4 = data.frame(logit_pred1,p1_m, pred_svm1,predict_nn1,classifier_knn,classifier_knn1)
+df_comp5 = data.frame(logit_pred1,p1_m1, pred_svm1,predict_nn1,classifier_knn,classifier_knn1)
+
+mode_char1 <- function(x) {
+    ux <- unique(na.omit(x))
+    ux[which.max(tabulate(match(x, ux)))]
+}
+
+df_new1 = df_comp1 %>%
+    as_tibble() %>%
+    rowwise() %>%
+    mutate(
+        Vote = mode_char1(c_across(logit_pred1:classifier_knn))
+    )
+df_new2 = df_comp2 %>%
+    as_tibble() %>%
+    rowwise() %>%
+    mutate(
+        Vote = mode_char1(c_across(logit_pred1:classifier_knn))
+    )
+df_new3 = df_comp3 %>%
+    as_tibble() %>%
+    rowwise() %>%
+    mutate(
+        Vote = mode_char1(c_across(logit_pred1:classifier_knn))
+    )
+df_new4 = df_comp4 %>%
+    as_tibble() %>%
+    rowwise() %>%
+    mutate(
+        Vote = mode_char1(c_across(logit_pred1:classifier_knn1))
+    )
+df_new5 = df_comp5 %>%
+    as_tibble() %>%
+    rowwise() %>%
+    mutate(
+        Vote = mode_char1(c_across(logit_pred1:classifier_knn))
+    )
+```
+
+```{r}
+mean(df_new1$Vote==test1_m$y1)
+mean(df_new2$Vote==test1_m$y1)
+mean(df_new3$Vote==test1_m$y1)
+ensemble = mean(df_new4$Vote==test1_m$y1)
+mean(df_new5$Vote==test1_m$y1)
+```
+
+```{r}
+rf_before<- read.table(file = "multiclass_19920506_v2.txt", header = FALSE)
+```
+
+```{r}
+library(data.table)
+table2 <- data.table(Algorithms = c('decision tree','ensembled results'),Accuracy = c(dt,ensemble))
+table2
+```
+
+```{r}
+library(tibble)
+library(dplyr)
+
+logit_pred_final=as.factor(logit_pred_final)
+nn_final=as.factor(nn_final)
+rf_before1=as.factor(rf_before$V1)
+
+df_comp_final = data.frame(logit_pred_final,rf_final,rf_before1,svm_final,nn_final,knn_final,knn_final1)
+
+mode_char <- function(x) {
+    ux <- unique(na.omit(x))
+    ux[which.max(tabulate(match(x, ux)))]
+}
+
+df_final = df_comp_final %>%
+    as_tibble() %>%
+    rowwise() %>%
+    mutate(
+        Vote = mode_char(c_across(logit_pred_final:knn_final1))
+    )
+```
+
+
+```{r}
+df_test <- df_final[8]
+df_test$Vote = as.numeric(levels(df_test$Vote))[df_test$Vote]
+write.table(df_test, file="multiclass_19920506.txt", sep="\t", col.names = F, row.names = F)
+```
+
