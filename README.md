@@ -16,9 +16,9 @@ Then, I did feature selection by using correlation matrix to pick out the most c
 
 I tried out many algorithms. 
 
-The first one is logistic. I had two types of codes for logistic as there exist different methods in r online. For both methods, I applied it to both selected and full data. By comparison, the second method produced higher accuracy and for both methods, full data has higher accuracys.
+The first one is logistic. I had two types of codes for logistic as there exist different methods in r online. The first one is just the simple one, and the second one includes regularization from lasso regression. For both methods, I applied it to both selected and full data. By comparison, the second method produced higher accuracy and for both methods, full data has higher accuracies.
 
-The second one is decision tree. I tried three types of codes for decision tree as there exist different methods in r online. For the first one, I used cross validation to resample the data, grid over various maxdepth, and applied it on both selected and full data. The result wasn't good enough as the highest accuracy for both were less then 0.9. The same for the second and third approach as their result were nearly the same. Yet, still, full data has higher accuracys.
+The second one is decision tree. I tried three types of codes for decision tree as there exist different methods in r online. For the first one, I used cross validation to resample the data, grid over various maxdepth, and applied it on both selected and full data. The result wasn't good enough as the highest accuracy for both were less then 0.9. The same for the second and third approach as their result were nearly the same. Yet, still, full data has higher accuracies.
 
 The third one is random forest. I applied it to both selected and full data. Both produced high accuracy from 0.97+ to 0.98+ and full data has a higher accuracy result.
 
